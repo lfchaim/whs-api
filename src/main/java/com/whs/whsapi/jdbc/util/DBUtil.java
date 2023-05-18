@@ -5,21 +5,294 @@ import java.io.FileInputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.util.LinkedMultiValueMap;
+
+import com.google.common.base.Joiner;
 import com.whs.whsapi.jdbc.meta.Column;
 import com.whs.whsapi.jdbc.meta.DBMetaUtil;
 import com.whs.whsapi.util.JSONUtil;
-import com.whs.whsapi.util.MapUtil;
 import com.whs.whsapi.util.ObjectUtil;
 import com.whs.whsapi.util.StringUtil;
 
 public class DBUtil {
+
+	public List<Map<String,Object>> list(Connection conn, String sql, LinkedMultiValueMap<String, String> param, int limit ){
+		List<Map<String,Object>> list = new ArrayList<Map<String,Object>>();
+		List<Object> listSet = new ArrayList<Object>();
+		
+		if( !sql.toLowerCase().contains(" where ") ) {
+			sql = sql +" where 1=1 ";
+		}
+		
+		StringBuilder sb = new StringBuilder(sql);
+		if( param != null && param.size() > 0 ) {
+			Iterator<String> it = param.keySet().iterator();
+			while( it.hasNext() ) {
+				String key = it.next();
+				if( key.equalsIgnoreCase("filter") ) {
+					for (String value : param.get(key)) {
+						String[] parts = value.split(",", 3);
+						Object valueParam = StringUtil.convert(parts[2]);
+						String command = parts[1];
+						switch (command) {
+						case "ics":
+							sb.append(" and lower(").append(parts[0]).append(") like lower(?) ");
+							listSet.add("%"+parts[2]+"%");
+							break;
+						case "ieq":
+							sb.append(" and lower(").append(parts[0]).append(") = lower(?) ");
+							listSet.add(valueParam);
+							break;
+						case "rx":
+							sb.append(" and ").append(parts[0]).append(" REGEXP ? ");
+							listSet.add(parts[2]);
+							break;
+						case "cs":
+							sb.append(" and ").append(parts[0]).append(" like ? ");
+							listSet.add("%"+parts[2]+"%");
+							break;
+						case "sw":
+							sb.append(" and ").append(parts[0]).append(" like ? ");
+							listSet.add(parts[2]+"%");
+							break;
+						case "ew":
+							sb.append(" and ").append(parts[0]).append(" like ? ");
+							listSet.add("%"+parts[2]);
+							break;
+						case "eq":
+							sb.append(" and ").append(parts[0]).append(" = ? ");
+							listSet.add(valueParam);
+							break;
+						case "lt":
+							sb.append(" and ").append(parts[0]).append(" < ? ");
+							listSet.add(valueParam);
+							break;
+						case "le":
+							sb.append(" and ").append(parts[0]).append(" <= ? ");
+							listSet.add(valueParam);
+							break;
+						case "ge":
+							sb.append(" and ").append(parts[0]).append(" >= ? ");
+							listSet.add(valueParam);
+							break;
+						case "gt":
+							sb.append(" and ").append(parts[0]).append(" > ? ");
+							listSet.add(valueParam);
+							break;
+						case "bt":
+							sb.append(" and ").append(parts[0]).append(" between ? and ? ");
+							String[] parts2 = parts[2].split(",", 2);
+							listSet.add(StringUtil.convert(parts2[0]));
+							listSet.add(StringUtil.convert(parts2[1]));
+							break;
+						case "in":
+							String[] partsn = parts[2].split(",");
+							sb.append(" and ").append(parts[0]).append(" in ( ");
+							for( int j = 0; j < partsn.length; j++ ) {
+								if( j > 0 )
+									sb.append(",");
+								sb.append("?");
+								listSet.add(StringUtil.convert(partsn[j]));
+							}
+							sb.append(") ");
+							break;
+						case "inc":
+							String[] partsi = parts[2].split(",");
+							sb.append(" and ( ");
+							for( int j = 0; j < partsi.length; j++ ) {
+								if( j > 0 ) {
+									sb.append(" or ");
+								}
+								sb.append(" ").append(parts[0]).append(" ilike ? ");
+								listSet.add("%"+partsi[j]+"%");
+							}
+							sb.append(") ");
+							break;
+
+						case "is":
+							sb.append(" and ").append(parts[0]).append(" is null ");
+							break;
+						}
+					}
+				} else if( key.equalsIgnoreCase("json") ) {
+					for (String value : param.get(key)) {
+						String[] parts = value.split(",", 4);
+						Object valueParam = StringUtil.convert(parts[3]);
+						String command = parts[2];
+						String colJSON = parts[0];
+						String colName = parts[1];
+						switch (command) {
+						case "ics":
+							sb.append(" and ").append(colJSON).append(" ->> '").append(colName).append("' ilike ? ");
+							listSet.add("%"+parts[3]+"%");
+							break;
+						case "ieq":
+							sb.append(" and ").append(colJSON).append(" ->> '").append(colName).append("' ilike ? ");
+							listSet.add(valueParam);
+							break;
+						case "rx":
+							sb.append(" and ").append(colJSON).append(" ->> ").append(colName).append(" REGEXP ? ");
+							listSet.add(parts[3]);
+							break;
+						case "cs":
+							sb.append(" and ").append(colJSON).append(" ->> ").append(colName).append(" ilike ? ");
+							listSet.add("%"+parts[3]+"%");
+							break;
+						case "sw":
+							sb.append(" and ").append(colJSON).append(" ->> ").append(colName).append(" ilike ? ");
+							listSet.add(parts[3]+"%");
+							break;
+						case "ew":
+							sb.append(" and ").append(colJSON).append(" ->> ").append(colName).append(" ilike ? ");
+							listSet.add("%"+parts[3]);
+							break;
+						case "eq":
+							sb.append(" and ").append(colJSON).append(" ->> ").append(colName).append(" = ? ");
+							listSet.add(valueParam);
+							break;
+						case "lt":
+							sb.append(" and ").append(colJSON).append(" ->> ").append(colName).append(" < ? ");
+							listSet.add(valueParam);
+							break;
+						case "le":
+							sb.append(" and ").append(colJSON).append(" ->> ").append(colName).append(" <= ? ");
+							listSet.add(valueParam);
+							break;
+						case "ge":
+							sb.append(" and ").append(colJSON).append(" ->> ").append(colName).append(" >= ? ");
+							listSet.add(valueParam);
+							break;
+						case "gt":
+							sb.append(" and ").append(colJSON).append(" ->> ").append(colName).append(" > ? ");
+							listSet.add(valueParam);
+							break;
+						case "bt":
+							sb.append(" and ").append(colJSON).append(" ->> ").append(colName).append(" between ? and ? ");
+							String[] parts2 = parts[3].split(",", 2);
+							listSet.add(StringUtil.convert(parts2[0]));
+							listSet.add(StringUtil.convert(parts2[1]));
+							break;
+						case "in":
+							String[] partsn = parts[3].split(",");
+							sb.append(" and ").append(colJSON).append(" ->> ").append(colName).append(" in ( ");
+							for( int j = 0; j < partsn.length; j++ ) {
+								if( j > 0 )
+									sb.append(",");
+								sb.append("?");
+								listSet.add(StringUtil.convert(partsn[j]));
+							}
+							sb.append(") ");
+							break;
+						case "inc":
+							String[] partsi = parts[3].split(",");
+							sb.append(" and ( ");
+							for( int j = 0; j < partsi.length; j++ ) {
+								if( j > 0 ) {
+									sb.append(" or ");
+								}
+								sb.append(" ").append(colJSON).append(" ->> ").append(colName).append("' ilike ? ");
+								//listSet.add(StringUtil.convert(partsi[j]));
+								listSet.add("%"+partsi[j]+"%");
+							}
+							sb.append(") ");
+							break;
+						case "is":
+							sb.append(" and ").append(colJSON).append(" ->> ").append(colName).append(" is null ");
+							break;
+						}
+					}
+				} else if( key.equals("ordering") ) {
+					sb.append(" order by ");
+					for( int i = 0; i < param.get(key).size(); i++ ) {
+						if( i > 0 )
+							sb.append(", ");
+						sb.append(param.get(key).get(i));
+					}
+				}
+			}
+		}
+		sql = sb.toString();
+		
+		if( limit > 0 ) {
+			try {
+				DatabaseMetaData meta = conn.getMetaData();
+				if( meta.getDriverName().toLowerCase().contains("postgre") ) {
+					sql = sql + " limit "+limit;
+				}
+			}catch( Exception e ) {
+				e.printStackTrace();
+			}
+		}
+
+		list = executePreparedQuery(conn, sql, listSet);
+		
+		return list;
+	}
+	
+	public List<Map<String,Object>> executePreparedQuery(Connection conn, String sql, List<Object> listSet){
+		List<Map<String,Object>> list = new ArrayList<Map<String,Object>>();
+		PreparedStatement ps = null;
+		StringBuilder sbLog = new StringBuilder();
+		sbLog.append("DBUtil.executeQuery - ").append("listSet: ").append(JSONUtil.toJSONString(listSet)).append(" SQL: ").append(sql);
+		System.out.println(sbLog.toString());
+		try {
+			ps = conn.prepareStatement(sql);
+			for( int i = 0; listSet != null && i < listSet.size(); i++ ) {
+				if( listSet.get(i) instanceof Integer ) {
+					ps.setInt(i+1, (Integer)listSet.get(i));
+				} else if( listSet.get(i) instanceof Long ) {
+					ps.setLong(i+1, (Long)listSet.get(i));
+				} else if( listSet.get(i) instanceof Double ) {
+					ps.setDouble(i+1, (Double)listSet.get(i));
+				} else if( listSet.get(i) instanceof Float ) { 
+					ps.setFloat(i+1, (Float)listSet.get(i));
+				} else if( listSet.get(i) instanceof String ) {
+					ps.setString(i+1, (String)listSet.get(i));
+				} else {
+					ps.setObject(i+1, listSet.get(i));
+				}
+			}
+			ResultSet rs = ps.executeQuery();
+			ResultSetMetaData meta = rs.getMetaData();
+			while( rs.next() ) {
+				Map<String,Object> mapRes = new LinkedHashMap<String, Object>();
+				for( int i = 0; i < meta.getColumnCount(); i++ ) {
+					String col = meta.getColumnName(i+1);
+					Object obj = rs.getObject(col);
+					mapRes.put(col, obj);
+				}
+				list.add(mapRes);
+			}
+			rs.close();
+		} catch (Exception e) {
+			Map<String,Object> mapErr = new LinkedHashMap<>();
+			mapErr.put("sql", sql);
+			mapErr.put("listSet", listSet);
+			//mapErr.put("stacktrace", ExceptionUtils.getStackTrace(e));
+			System.err.println("SQL: "+sql);
+			System.err.println("Params: "+JSONUtil.toJSONString(listSet));
+			e.printStackTrace();
+		} finally {
+			if( ps != null ) {
+				try{ps.close();}catch(SQLException e) {}
+			}
+		}
+		return list;
+	}
 
 	public int insert(Connection conn, String tableName, Map<String,Object> mapSet ){
 		int ret = 0;
@@ -29,37 +302,37 @@ public class DBUtil {
 		StringBuilder sb = new StringBuilder();
 		try {
 			List<Column> listCol = DBMetaUtil.listColumns(conn, null, tableName);
-			sb.append("insert into ").append(tableName).append(" (");
-			List<String> listKey = MapUtil.listKeyString(mapSet);
-			// Se no Map houver uma chave que nao pertence a tabela, remover
-			for( int i = 0; i < listKey.size(); i++ ) {
-				if( getColumn(listCol, listKey.get(i)) == null ) {
-					listKey.remove(i--);
+			
+			List<String> listColName = new ArrayList<>();
+			List<String> listColChar = new ArrayList<>();
+			for( String key: mapSet.keySet() ) {
+				Column colFound = null;
+				for( int i = 0; i < listCol.size(); i++ ) {
+					if( key.equals(listCol.get(i).getColumnName()) ) {
+						colFound = listCol.get(i);
+						break;
+					}
+				}
+				if( colFound != null ) {
+					listColName.add(colFound.getColumnName());
+					if( "jsonb".equals(colFound.getTypeName()) )
+						listColChar.add("?::jsonb");
+					else if( "geometry".equals(colFound.getTypeName()) )
+						listColChar.add("ST_GeomFromText(?, 4326)"); //25832)");
+					else if( "_varchar".equals(colFound.getTypeName()) )
+						listColChar.add("?::_varchar");
+					else
+						listColChar.add("?");
 				}
 			}
-			for( int i = 0; i < listKey.size(); i++ ) {
-				if( i > 0 )
-					sb.append(", ");
-				sb.append(listKey.get(i));
-			}
-			sb.append(") values (");
-			for( int i = 0; i < listKey.size(); i++ ) {
-				if( i > 0 )
-					sb.append(", ");
-				Column col = getColumn(listCol, listKey.get(i));
-				if( "jsonb".equals(col.getTypeName()) )
-					sb.append("?::jsonb");
-				else if( "geometry".equals(col.getTypeName()) )
-					sb.append("ST_GeomFromText(?, 4326)"); //25832)");
-				else if( "_varchar".equals(col.getTypeName()) )
-					sb.append("?::_varchar");
-				else
-					sb.append("?");
-			}
-			sb.append(")");
+			
+			Joiner commaJoin = Joiner.on(", ");
+			String sql = String.format("insert into %s (%s) values (%s) ", tableName, commaJoin.join(listColName), commaJoin.join(listColChar));
+			sb.append(sql);
+			
 			ps = conn.prepareStatement(sb.toString());
-			for( int i = 0; i < listKey.size(); i++ ) {
-				setType(ps, (i+1), mapSet.get(listKey.get(i)), getColumn(listCol, listKey.get(i)));
+			for( int i = 0; i < listColName.size(); i++ ) {
+				setType(ps, (i+1), mapSet.get(listColName.get(i)), getColumn(listCol, listColName.get(i)));
 			}
 			ret = ps.executeUpdate();
 		} catch (Exception e) {
@@ -224,5 +497,14 @@ public class DBUtil {
 		return ret;
 	}
 
+	public static Connection getConnection(String url, String usr, String pwd) {
+		Connection ret = null;
+		try {
+			ret = DriverManager.getConnection(url, usr, pwd);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return ret;
+	}
 	
 }
