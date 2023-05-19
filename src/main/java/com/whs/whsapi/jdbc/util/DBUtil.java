@@ -24,6 +24,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import com.google.common.base.Joiner;
 import com.whs.whsapi.jdbc.meta.Column;
 import com.whs.whsapi.jdbc.meta.DBMetaUtil;
+import com.whs.whsapi.jdbc.meta.PK;
 import com.whs.whsapi.util.JSONUtil;
 import com.whs.whsapi.util.ObjectUtil;
 import com.whs.whsapi.util.StringUtil;
@@ -306,13 +307,7 @@ public class DBUtil {
 			List<String> listColName = new ArrayList<>();
 			List<String> listColChar = new ArrayList<>();
 			for( String key: mapSet.keySet() ) {
-				Column colFound = null;
-				for( int i = 0; i < listCol.size(); i++ ) {
-					if( key.equals(listCol.get(i).getColumnName()) ) {
-						colFound = listCol.get(i);
-						break;
-					}
-				}
+				Column colFound = getColumn(listCol, key);
 				if( colFound != null ) {
 					listColName.add(colFound.getColumnName());
 					if( "jsonb".equals(colFound.getTypeName()) )
@@ -333,6 +328,71 @@ public class DBUtil {
 			ps = conn.prepareStatement(sb.toString());
 			for( int i = 0; i < listColName.size(); i++ ) {
 				setType(ps, (i+1), mapSet.get(listColName.get(i)), getColumn(listCol, listColName.get(i)));
+			}
+			ret = ps.executeUpdate();
+		} catch (Exception e) {
+			System.err.println("DBUtil.insert - SQL: "+sb.toString()+" map: "+JSONUtil.toJSONString(mapSet));
+			System.err.println(e.getMessage());
+			e.printStackTrace();
+		} finally {
+			try {ps.close();}catch(Exception e) {}
+		}
+		return ret;
+	}
+
+	public int update(Connection conn, String tableName, Map<String,Object> mapSet ){
+		int ret = 0;
+		if( StringUtil.isNull(tableName) || (mapSet == null || mapSet.isEmpty()) )
+			return ret;
+		PreparedStatement ps = null;
+		StringBuilder sb = new StringBuilder();
+		try {
+			List<Column> listCol = DBMetaUtil.listColumns(conn, null, tableName);
+			List<PK> listPk  = DBMetaUtil.listPK(conn, null, tableName);
+			
+			List<String> listColSet = new ArrayList<>();
+			List<String> listPkSet = new ArrayList<>();
+			List<String> listSetName = new ArrayList<>();
+			
+			for( String key: mapSet.keySet() ) {
+				Column colFound = getColumn(listCol, key);
+				PK pk = getPk(listPk, key);
+				if( colFound != null && pk == null ) {
+					listSetName.add(key);
+					if( "jsonb".equals(colFound.getTypeName()) )
+						listColSet.add(colFound.getColumnName()+" = ?::jsonb");
+					else if( "geometry".equals(colFound.getTypeName()) )
+						listColSet.add(colFound.getColumnName()+" = ST_GeomFromText(?, 4326)"); //25832)");
+					else if( "_varchar".equals(colFound.getTypeName()) )
+						listColSet.add(colFound.getColumnName()+" = ?::_varchar");
+					else
+						listColSet.add(colFound.getColumnName()+" = ?");
+				}
+			}
+			for( String key: mapSet.keySet() ) {
+				Column colFound = getColumn(listCol, key);
+				PK pk = getPk(listPk, key);
+				if ( pk != null && !listSetName.contains(key) ){
+					listSetName.add(key);
+					if( "jsonb".equals(colFound.getTypeName()) )
+						listPkSet.add(colFound.getColumnName()+" = ?::jsonb");
+					else if( "geometry".equals(colFound.getTypeName()) )
+						listPkSet.add(colFound.getColumnName()+" = ST_GeomFromText(?, 4326)"); //25832)");
+					else if( "_varchar".equals(colFound.getTypeName()) )
+						listPkSet.add(colFound.getColumnName()+" = ?::_varchar");
+					else
+						listPkSet.add(colFound.getColumnName()+" = ?");
+				}
+			}
+			
+			Joiner commaJoin = Joiner.on(", ");
+			Joiner andJoin = Joiner.on(" and ");
+			String sql = String.format("update %s set %s where %s ", tableName, commaJoin.join(listColSet), andJoin.join(listPkSet));
+			sb.append(sql);
+			
+			ps = conn.prepareStatement(sb.toString());
+			for( int i = 0; i < listSetName.size(); i++ ) {
+				setType(ps, (i+1), mapSet.get(listSetName.get(i)), getColumn(listCol, listSetName.get(i)));
 			}
 			ret = ps.executeUpdate();
 		} catch (Exception e) {
@@ -488,6 +548,17 @@ public class DBUtil {
 
 	private static Column getColumn( List<Column> list, String key ) {
 		Column ret = null;
+		for( int i = 0; list != null && i < list.size(); i++ ) {
+			if( list.get(i).getColumnName().equals(key) ) {
+				ret = list.get(i);
+				break;
+			}
+		}
+		return ret;
+	}
+
+	private static PK getPk( List<PK> list, String key ) {
+		PK ret = null;
 		for( int i = 0; list != null && i < list.size(); i++ ) {
 			if( list.get(i).getColumnName().equals(key) ) {
 				ret = list.get(i);

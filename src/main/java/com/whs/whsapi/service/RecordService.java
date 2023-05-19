@@ -59,4 +59,22 @@ public class RecordService {
 		}
 		return ret;
 	}
+
+	public Object update(String tableName, Map<String,Object> map, LinkedMultiValueMap<String, String> params) {
+		Object ret = null;
+		Connection conn = null;
+		DBUtil du = new DBUtil();
+		try {
+			conn = DBUtil.getConnection(EnvUtil.getEnvValue("DB_URL"), EnvUtil.getEnvValue("DB_USR"), EnvUtil.getEnvValue("DB_PWD"));
+			int retIns = du.update(conn, tableName, map);
+			if( retIns > 0 )
+				ret = Integer.parseInt(""+retIns);
+		} catch (Exception e) {
+			e.printStackTrace();
+		} finally {
+			try{ conn.close(); } catch( SQLException e ) { }
+		}
+		return ret;
+	}
+
 }

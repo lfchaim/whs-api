@@ -2,6 +2,7 @@ package com.whs.whsapi.controller;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
@@ -34,7 +35,16 @@ public class RecordController {
 			return new ResponseEntity<>( mapErr, HttpStatus.UNPROCESSABLE_ENTITY);
 
 		}
-		return new ResponseEntity<>(service.list(table, params), HttpStatus.OK);
+		List<Map<String,Object>> listRes = service.list(table, params);
+		if( listRes != null && listRes.size() > 1 ) {
+			Map<String,Object> mapRec = new LinkedHashMap<>();
+			mapRec.put("records", listRes);
+			return new ResponseEntity<>( mapRec, HttpStatus.OK );
+		} else {
+			if( listRes == null )
+				listRes = new ArrayList<>();
+			return new ResponseEntity<>( listRes, HttpStatus.OK );	
+		}
 	}
 /*
 	@RequestMapping(value = "/{table}/{id}", method = RequestMethod.GET)
@@ -98,4 +108,35 @@ public class RecordController {
 		}
 	}
 	
+	@SuppressWarnings("unchecked")
+	@RequestMapping(value = "/{table}", method = RequestMethod.PUT, headers = "Content-Type=application/json")
+	public ResponseEntity<?> update(
+			@PathVariable("table") String table, 
+			@RequestBody Object record,
+			@RequestParam LinkedMultiValueMap<String, String> params) {
+		
+		RecordService service = new RecordService();
+		
+		if (!service.exists(table)) {
+			ErrorCode ec = ErrorCode.TABLE_NOT_FOUND;
+			Map<String,Object> mapErr = new LinkedHashMap<>();
+			mapErr.put("code", ec.value());
+			mapErr.put("message", ec.getMessage(table));
+			return new ResponseEntity<>( mapErr, HttpStatus.UNPROCESSABLE_ENTITY);
+		}
+		
+		if (record instanceof ArrayList<?>) {
+			ArrayList<?> records = (ArrayList<?>) record;
+			ArrayList<Object> result = new ArrayList<>();
+			for (int i = 0; i < records.size(); i++) {
+				Map<String,Object> mapRec = (Map<String,Object>)records.get(i);
+				result.add(service.update(table, mapRec, params));
+			}
+			return new ResponseEntity<>(result, HttpStatus.OK);
+		} else {
+			Map<String,Object> mapRec = (Map<String,Object>)record;
+			return new ResponseEntity<>(service.update(table, mapRec, params), HttpStatus.OK);
+		}
+	}
+
 }
