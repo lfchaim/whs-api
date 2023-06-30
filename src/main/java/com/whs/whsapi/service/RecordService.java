@@ -33,8 +33,7 @@ public class RecordService {
 		try {
 			conn = DBUtil.getConnection(EnvUtil.getEnvValue("DB_URL"), EnvUtil.getEnvValue("DB_USR"), EnvUtil.getEnvValue("DB_PWD"));
 			
-			String sql = "select * from "+tableName+" ";
-			ret = du.list(conn, sql, params, limit);
+			ret = du.listByTable(conn, tableName, params, limit);
 		} catch (Exception e) {
 			e.printStackTrace();
 		} finally {

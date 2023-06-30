@@ -25,18 +25,24 @@ import com.google.common.base.Joiner;
 import com.whs.whsapi.jdbc.meta.Column;
 import com.whs.whsapi.jdbc.meta.DBMetaUtil;
 import com.whs.whsapi.jdbc.meta.PK;
+import com.whs.whsapi.jdbc.meta.Table;
 import com.whs.whsapi.util.JSONUtil;
 import com.whs.whsapi.util.ObjectUtil;
 import com.whs.whsapi.util.StringUtil;
 
 public class DBUtil {
 
-	public List<Map<String,Object>> list(Connection conn, String sql, LinkedMultiValueMap<String, String> param, int limit ){
+	public List<Map<String,Object>> listByTable(Connection conn, String table, LinkedMultiValueMap<String, String> param, int limit ){
 		List<Map<String,Object>> list = new ArrayList<Map<String,Object>>();
 		List<Object> listSet = new ArrayList<Object>();
 		
-		if( !sql.toLowerCase().contains(" where ") ) {
-			sql = sql +" where 1=1 ";
+		String sql = "select * from "+table+" where 1=1 ";
+		
+		Table t = null;
+		try {
+			t = DBMetaUtil.loadTable(conn, null, table, null);
+		}catch(SQLException e) {
+			e.printStackTrace();
 		}
 		
 		StringBuilder sb = new StringBuilder(sql);
@@ -47,11 +53,19 @@ public class DBUtil {
 				if( key.equalsIgnoreCase("filter") ) {
 					for (String value : param.get(key)) {
 						String[] parts = value.split(",", 3);
+						String columnName = parts[0];
+						
+						Column c = DBMetaUtil.getColumn(t.getColumn(), columnName);
+						String cast = "";
+						if( "jsonb".equals(c.getTypeName()) ) {
+							cast = "::text";
+						}
+						
 						Object valueParam = StringUtil.convert(parts[2]);
 						String command = parts[1];
 						switch (command) {
 						case "ics":
-							sb.append(" and lower(").append(parts[0]).append(") like lower(?) ");
+							sb.append(" and lower(").append(parts[0]).append(cast).append(") like lower(?) ");
 							listSet.add("%"+parts[2]+"%");
 							break;
 						case "ieq":
@@ -63,15 +77,15 @@ public class DBUtil {
 							listSet.add(parts[2]);
 							break;
 						case "cs":
-							sb.append(" and ").append(parts[0]).append(" like ? ");
+							sb.append(" and ").append(parts[0]).append(cast).append(" like ? ");
 							listSet.add("%"+parts[2]+"%");
 							break;
 						case "sw":
-							sb.append(" and ").append(parts[0]).append(" like ? ");
+							sb.append(" and ").append(parts[0]).append(cast).append(" like ? ");
 							listSet.add(parts[2]+"%");
 							break;
 						case "ew":
-							sb.append(" and ").append(parts[0]).append(" like ? ");
+							sb.append(" and ").append(parts[0]).append(cast).append(" like ? ");
 							listSet.add("%"+parts[2]);
 							break;
 						case "eq":
@@ -118,7 +132,7 @@ public class DBUtil {
 								if( j > 0 ) {
 									sb.append(" or ");
 								}
-								sb.append(" ").append(parts[0]).append(" ilike ? ");
+								sb.append(" ").append(parts[0]).append(cast).append(" ilike ? ");
 								listSet.add("%"+partsi[j]+"%");
 							}
 							sb.append(") ");

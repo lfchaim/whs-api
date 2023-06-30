@@ -322,6 +322,19 @@ public class DBMetaUtil {
 		rs.close();
 		return list;
 	}
+	
+	public static Column getColumn( List<Column> list, String columnName ) {
+		Column ret = null;
+		if( list != null ) {
+			for( Column c : list ) {
+				if( c.getColumnName().equals(columnName) ) {
+					ret = c;
+					break;
+				}
+			}
+		}
+		return ret;
+	}
 
 	public static List<Column> listColumns(Connection conn, String schema, String table) throws SQLException {
 		List<Column> list = new ArrayList<Column>();
