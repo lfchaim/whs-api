@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: postgres_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mydatabase
+      # Opcional: defina o timezone se quiser
+      # TZ: America/Sao_Paulo
+    ports:
+      - "5432:5432"   # alterado para evitar conflito no host
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    command: ["postgres", "-c", "listen_addresses=*"]  # garante escuta em 0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mydatabase"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - db_network
+
+  adminer:
+    image: adminer:latest
+    container_name: adminer
+    restart: unless-stopped
+    ports:
+      - "8880:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy   # se sua versão não suportar, remova e mantenha só 'depends_on: - postgres'
+    networks:
+      - db_network
+
+volumes:
+  postgres_data:
+
+networks:
+  db_network:
+    driver: bridge
